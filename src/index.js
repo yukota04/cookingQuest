@@ -12,4 +12,4 @@ root.render(
   </StrictMode>
 );
 
-serviceWorkerRegistration.register();
+serviceWorkerRegistration.unregister();

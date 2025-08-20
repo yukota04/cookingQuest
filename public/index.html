@@ -1,12 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CookingQuest</title>
+    <!-- Esta línea vincula tu aplicación a tu manifest.json -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   </head>
   <body>
     <div id="root"></div>
+    <!-- Reproductor de música de fondo en bucle -->
+    <audio id="cooking_theme_music" src="/music/cooking_theme.mp3" loop preload="auto"></audio>
   </body>
 </html>
