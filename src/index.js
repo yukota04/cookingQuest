@@ -9,8 +9,7 @@ const root = createRoot(document.getElementById("root"));
 root.render(
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 );
 
-// Registra el service worker
 serviceWorkerRegistration.register();
