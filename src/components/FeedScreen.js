@@ -491,7 +491,9 @@ const FeedScreen = () => {
           onClick={() =>
             setActiveTab(activeTab === "following" ? "all" : "following")
           }
-          className={`flex items-center gap-2 text-white font-semibold px-4 py-2 rounded-full transition-colors duration-200 ${activeTab === "following" ? "bg-orange-500" : "bg-white/20"}`}
+          className={`flex items-center gap-2 text-white font-semibold px-4 py-2 rounded-full transition-colors duration-200 ${
+            activeTab === "following" ? "bg-orange-500" : "bg-white/20"
+          }`}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
