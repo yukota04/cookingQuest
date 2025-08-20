@@ -20,6 +20,13 @@
   ],
   "iarc_rating_id": "e96f131a-f322-4a00-8b2b-68936785160c",
   "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=com.example.app",
+      "id": "com.example.app"
+    }
+  ],
   "screenshots": [
     {
       "src": "/screenshots/screenshot-mobile.png",
