@@ -18,6 +18,8 @@
     "food",
     "recipes"
   ],
+  "iarc_rating_id": "e96f131a-f322-4a00-8b2b-68936785160c",
+  "prefer_related_applications": false,
   "screenshots": [
     {
       "src": "/screenshots/screenshot-mobile.png",
