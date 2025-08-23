@@ -1,401 +1,398 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { X, ImagePlus, Plus, Trash2, Save, Star } from 'lucide-react'; // Added Star for difficulty
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, ImagePlus, PlusCircle, Trash2, Clock, Save } from 'lucide-react';
+import { getFirestore, doc, addDoc, updateDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { app } from '../firebaseConfig';
+import NotificationModal from './NotificationModal'; // Importamos el nuevo componente
 
-const RecipeEditModal = ({ isOpen, onClose, recipe, onSave }) => {
-  const [name, setName] = useState(recipe.name || '');
-  const [description, setDescription] = useState(recipe.description || '');
-  const [totalTime, setTotalTime] = useState(recipe.totalTime || '');
-  const [difficulty, setDifficulty] = useState(recipe.difficulty || 'medio'); // New state for difficulty
-  const [ingredients, setIngredients] = useState(recipe.ingredients || ['']);
-  const [steps, setSteps] = useState(recipe.steps || [{ instruction: '', duration: 0, flameLevel: 'medio', ingredient: '', imageUrl: '' }]); // Added imageUrl to steps
+// --- Definición de los tipos de pasos y utensilios ---
+const STEP_TYPES = [
+    { value: 'preparar', label: '🔪 Preparar (Picar, Cortar...)' },
+    { value: 'mezclar', label: '🥣 Mezclar (Batir, Licuar...)' },
+    { value: 'cocinar', label: '🔥 Cocinar (Freír, Hervir...)', hasUtensil: true },
+    { value: 'hornear', label: '♨️ Hornear (Precalentar...)', hasUtensil: true },
+    { value: 'reposar', label: '⏳ Reposar / Enfriar' },
+    { value: 'servir', label: '🍽️ Servir / Decorar' },
+    { value: 'otro', label: '📝 Otro' },
+];
+
+const UTENSILS = {
+    cocinar: ['Cocina', 'Leña'],
+    hornear: ['Horno'],
+};
+
+const TEMPERATURE_OPTIONS = {
+    Cocina: ['Baja', 'Media', 'Alta'],
+    Leña: ['Fogón', 'Asador'],
+};
+
+const INITIAL_INGREDIENT = { id: Date.now(), quantity: '', name: '', image: null, imageFile: null, imagePreview: '' };
+const INITIAL_STEP = { 
+    id: Date.now(), 
+    type: 'preparar', 
+    instruction: '', 
+    time: '', 
+    utensil: '',
+    temperature: '', 
+    image: null, 
+    imageFile: null, 
+    imagePreview: '' 
+};
+
+const INITIAL_STATE = {
+  name: '',
+  description: '',
+  totalTime: '',
+  imageUrl: '',
+  ingredients: [INITIAL_INGREDIENT],
+  steps: [INITIAL_STEP],
+};
+
+const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
+  const [recipeData, setRecipeData] = useState(INITIAL_STATE);
   const [imageFile, setImageFile] = useState(null);
-  const [imageUrl, setImageUrl] = useState(recipe.imageUrl || '');
+  const [imagePreview, setImagePreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Estados para el nuevo modal de notificación
+  const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info' });
+
+  const db = getFirestore(app);
+  const auth = getAuth(app);
   const storage = getStorage(app);
+  const currentUser = auth.currentUser;
+
+  // Función para mostrar el modal de notificación
+  const showNotification = (message, type) => {
+    setNotification({ isOpen: true, message, type });
+  };
+
+  // Función para cerrar el modal de notificación
+  const closeNotification = () => {
+    setNotification({ ...notification, isOpen: false });
+    if (notification.type === 'success') {
+      onClose(); // Cierra el modal de edición después de una notificación de éxito
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
-      setName(recipe.name || '');
-      setDescription(recipe.description || '');
-      setTotalTime(recipe.totalTime || '');
-      setDifficulty(recipe.difficulty || 'medio'); // Set difficulty
-      setIngredients(recipe.ingredients || ['']);
-      setSteps(recipe.steps || [{ instruction: '', duration: 0, flameLevel: 'medio', ingredient: '', imageUrl: '' }]);
-      setImageFile(null);
-      setImageUrl(recipe.imageUrl || '');
+      if (recipeToEdit && recipeToEdit.id) {
+        setRecipeData({
+          ...recipeToEdit,
+          ingredients: (recipeToEdit.ingredients || []).map((ing, i) => ({ ...INITIAL_INGREDIENT, ...ing, id: i, imageFile: null, imagePreview: ing.image || '' })),
+          steps: (recipeToEdit.steps || []).map((step, i) => ({ ...INITIAL_STEP, ...step, id: i, imageFile: null, imagePreview: step.image || '' })),
+        });
+        setImagePreview(recipeToEdit.imageUrl);
+      } else {
+        setRecipeData(INITIAL_STATE);
+        setImagePreview('');
+        setImageFile(null);
+      }
       setError('');
     }
-  }, [isOpen, recipe]);
+  }, [isOpen, recipeToEdit]);
 
-  const handleImageChange = (e) => {
+  const handleDataChange = (e) => {
+    const { name, value } = e.target;
+    setRecipeData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleMainImageChange = (e) => {
     if (e.target.files[0]) {
-      setImageFile(e.target.files[0]);
-      setImageUrl(URL.createObjectURL(e.target.files[0]));
+      const file = e.target.files[0];
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  const handleStepImageChange = (index, file) => {
-    if (file) {
-      const newSteps = [...steps];
-      newSteps[index].imageFile = file; // Store file temporarily
-      newSteps[index].imageUrl = URL.createObjectURL(file); // Show preview
-      setSteps(newSteps);
+  // --- MANEJADORES DE INGREDIENTES ---
+  const handleIngredientTextChange = (index, e) => {
+    const { name, value } = e.target;
+    const newIngredients = [...recipeData.ingredients];
+    newIngredients[index][name] = value;
+    setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
+  };
+  
+  const handleIngredientImageChange = (index, e) => {
+    if (e.target.files[0]) {
+        const file = e.target.files[0];
+        const newIngredients = [...recipeData.ingredients];
+        newIngredients[index].imageFile = file;
+        newIngredients[index].imagePreview = URL.createObjectURL(file);
+        setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
     }
   };
 
-  const handleIngredientChange = (index, value) => {
-    const newIngredients = [...ingredients];
-    newIngredients[index] = value;
-    setIngredients(newIngredients);
+  const addIngredientField = () => {
+    setRecipeData(prev => ({
+      ...prev,
+      ingredients: [...prev.ingredients, { ...INITIAL_INGREDIENT, id: Date.now() }]
+    }));
   };
 
-  const handleAddIngredient = () => {
-    setIngredients([...ingredients, '']);
+  const removeIngredientField = (index) => {
+    const newIngredients = recipeData.ingredients.filter((_, i) => i !== index);
+    setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
   };
 
-  const handleRemoveIngredient = (index) => {
-    const newIngredients = ingredients.filter((_, i) => i !== index);
-    setIngredients(newIngredients);
+  // --- MANEJADORES DE PASOS (ACTUALIZADOS) ---
+  const handleStepFieldChange = (index, e) => {
+    const { name, value } = e.target;
+    const newSteps = [...recipeData.steps];
+    newSteps[index][name] = value;
+
+    if (name === 'type') {
+        newSteps[index].utensil = '';
+        newSteps[index].temperature = '';
+    }
+    if (name === 'utensil') {
+        newSteps[index].temperature = '';
+    }
+
+    setRecipeData(prev => ({ ...prev, steps: newSteps }));
   };
 
-  const handleStepChange = (index, field, value) => {
-    const newSteps = [...steps];
-    newSteps[index][field] = value;
-    setSteps(newSteps);
+  const handleStepImageChange = (index, e) => {
+    if (e.target.files[0]) {
+        const file = e.target.files[0];
+        const newSteps = [...recipeData.steps];
+        newSteps[index].imageFile = file;
+        newSteps[index].imagePreview = URL.createObjectURL(file);
+        setRecipeData(prev => ({ ...prev, steps: newSteps }));
+    }
   };
 
-  const handleAddStep = () => {
-    setSteps([...steps, { instruction: '', duration: 0, flameLevel: 'medio', ingredient: '', imageUrl: '' }]);
+  const addStepField = () => {
+    setRecipeData(prev => ({
+      ...prev,
+      steps: [...prev.steps, { ...INITIAL_STEP, id: Date.now() }]
+    }));
   };
 
-  const handleRemoveStep = (index) => {
-    const newSteps = steps.filter((_, i) => i !== index);
-    setSteps(newSteps);
+  const removeStepField = (index) => {
+    const newSteps = recipeData.steps.filter((_, i) => i !== index);
+    setRecipeData(prev => ({ ...prev, steps: newSteps }));
   };
 
+  // --- LÓGICA PARA GUARDAR (CORREGIDA) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (!name || !description || !totalTime || ingredients.some(ing => !ing.trim()) || steps.some(step => !step.instruction.trim())) {
-      setError('Por favor, completa todos los campos obligatorios.');
-      setLoading(false);
-      return;
+    if (!currentUser) {
+        showNotification("Debes iniciar sesión para guardar recetas.", "error");
+        return;
     }
+    setLoading(true);
+    setError('');
 
-    let finalImageUrl = imageUrl;
-    if (imageFile) {
-      try {
+    try {
+      let finalRecipeImageUrl = (recipeToEdit && recipeToEdit.imageUrl) ? recipeToEdit.imageUrl : '';
+      if (imageFile) {
         const imageRef = ref(storage, `recipe_images/${Date.now()}-${imageFile.name}`);
         const snapshot = await uploadBytes(imageRef, imageFile);
-        finalImageUrl = await getDownloadURL(snapshot.ref);
-      } catch (err) {
-        console.error("Error uploading image:", err);
-        setError('Error al subir la imagen de la receta. Inténtalo de nuevo.');
-        setLoading(false);
-        return;
+        finalRecipeImageUrl = await getDownloadURL(snapshot.ref);
       }
+
+      const ingredientsWithImageUrls = await Promise.all(
+        recipeData.ingredients.map(async (ing) => {
+          let imageUrl = ing.image;
+          if (ing.imageFile) {
+            const ingImageRef = ref(storage, `ingredient_images/${Date.now()}-${ing.imageFile.name}`);
+            const snapshot = await uploadBytes(ingImageRef, ing.imageFile);
+            imageUrl = await getDownloadURL(snapshot.ref);
+          }
+          return { quantity: ing.quantity, name: ing.name, image: imageUrl };
+        })
+      );
+
+      const stepsWithImageUrls = await Promise.all(
+        recipeData.steps.map(async (step) => {
+            let imageUrl = step.image;
+            if (step.imageFile) {
+                const stepImageRef = ref(storage, `step_images/${Date.now()}-${step.imageFile.name}`);
+                const snapshot = await uploadBytes(stepImageRef, step.imageFile);
+                imageUrl = await getDownloadURL(snapshot.ref);
+            }
+            return { type: step.type, instruction: step.instruction, time: step.time, utensil: step.utensil, temperature: step.temperature, image: imageUrl };
+        })
+      );
+
+      // Objeto de datos limpio para Firestore
+      const finalRecipeData = {
+        name: recipeData.name,
+        description: recipeData.description,
+        totalTime: recipeData.totalTime,
+        imageUrl: finalRecipeImageUrl,
+        ingredients: ingredientsWithImageUrls,
+        steps: stepsWithImageUrls,
+        author: currentUser.displayName || currentUser.email.split('@')[0],
+        authorId: currentUser.uid,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (recipeToEdit && recipeToEdit.id) {
+        const recipeDocRef = doc(db, 'recipes', recipeToEdit.id);
+        await updateDoc(recipeDocRef, finalRecipeData);
+        showNotification("Receta actualizada con éxito!", "success");
+      } else {
+        finalRecipeData.createdAt = serverTimestamp();
+        finalRecipeData.averageRating = 0;
+        finalRecipeData.ratingCount = 0;
+        await addDoc(collection(db, 'recipes'), finalRecipeData);
+        showNotification("Receta creada con éxito!", "success");
+      }
+
+      onSave(finalRecipeData); // Pasa los datos finales para la actualización en la biblioteca
+    } catch (err) {
+      console.error("Error detallado al guardar receta:", err);
+      showNotification("Error al guardar la receta. Revisa la consola para más detalles.", "error");
+    } finally {
+      setLoading(false);
     }
-
-    // Upload images for each step
-    const stepsWithUploadedImages = await Promise.all(steps.map(async (step) => {
-      if (step.imageFile) {
-        try {
-          const stepImageRef = ref(storage, `step_images/${Date.now()}-${step.imageFile.name}`);
-          const snapshot = await uploadBytes(stepImageRef, step.imageFile);
-          const stepImageUrl = await getDownloadURL(snapshot.ref);
-          return { ...step, imageUrl: stepImageUrl, imageFile: null }; // Remove file object
-        } catch (err) {
-          console.error("Error uploading step image:", err);
-          setError('Error al subir una imagen de paso. Inténtalo de nuevo.');
-          return { ...step, imageFile: null }; // Continue without image if upload fails
-        }
-      }
-      return { ...step, imageFile: null }; // Remove file object if no new file
-    }));
-
-    const recipeData = {
-      ...recipe, // Keep existing data like authorId, createdAt etc.
-      name,
-      description,
-      totalTime,
-      difficulty, // Added difficulty
-      ingredients: ingredients.filter(ing => ing.trim()),
-      steps: stepsWithUploadedImages,
-      imageUrl: finalImageUrl,
-    };
-
-    onSave(recipeData);
-    setLoading(false);
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-3xl h-[90vh] overflow-y-auto relative"
-      >
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-700">
-          <X className="w-6 h-6" />
-        </button>
-
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-          {recipe.id ? 'Editar Receta' : 'Crear Nueva Receta'}
-        </h2>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Info */}
-          <div>
-            <label className="block text-gray-700 font-semibold mb-2">Nombre de la Receta</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-              placeholder="Ej: Pollo al Curry"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-semibold mb-2">Descripción</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none h-24"
-              placeholder="Una breve descripción de tu deliciosa receta..."
-              required
-            ></textarea>
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-semibold mb-2">Tiempo Total de Preparación</label>
-            <input
-              type="text"
-              value={totalTime}
-              onChange={(e) => setTotalTime(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-              placeholder="Ej: 45 minutos"
-              required
-            />
-          </div>
-
-          {/* Difficulty Selector */}
-          <div>
-            <label className="block text-gray-700 font-semibold mb-2">Nivel de Dificultad</label>
-            <div className="flex gap-2">
-              {['facil', 'medio', 'dificil'].map((level) => (
-                <motion.button
-                  key={level}
-                  type="button"
-                  onClick={() => setDifficulty(level)}
-                  className={`flex-1 py-3 rounded-xl font-semibold capitalize ${
-                    difficulty === level
-                      ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-md'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  {level}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-
-          {/* Image Upload */}
-          <div>
-            <label className="block text-gray-700 font-semibold mb-2">Imagen de la Receta</label>
-            <div className="flex items-center gap-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                className="hidden"
-                id="recipe-image-upload"
-              />
-              <label
-                htmlFor="recipe-image-upload"
-                className="flex-shrink-0 w-32 h-32 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-orange-400 transition-all"
-              >
-                {imageUrl ? (
-                  <img src={imageUrl} alt="Preview" className="w-full h-full object-cover rounded-xl" />
-                ) : (
-                  <ImagePlus className="w-12 h-12 text-gray-400" />
-                )}
-              </label>
-              <p className="text-gray-500 text-sm">
-                {imageFile ? imageFile.name : 'Haz clic para subir una imagen de tu receta'}
-              </p>
-            </div>
-          </div>
-
-          {/* Ingredients List */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-800 mb-3">Ingredientes</h3>
-            {ingredients.map((ingredient, index) => (
-              <div key={index} className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={ingredient}
-                  onChange={(e) => handleIngredientChange(index, e.target.value)}
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-                  placeholder={`Ingrediente ${index + 1}`}
-                  required
-                />
-                {ingredients.length > 1 && (
-                  <motion.button
-                    type="button"
-                    onClick={() => handleRemoveIngredient(index)}
-                    className="bg-red-100 text-red-600 p-3 rounded-xl hover:bg-red-200 transition-all"
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </motion.button>
-                )}
-              </div>
-            ))}
-            <motion.button
-              type="button"
-              onClick={handleAddIngredient}
-              className="w-full bg-blue-100 text-blue-600 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-200 transition-all"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+    <>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-3xl h-[95vh] relative"
             >
-              <Plus className="w-5 h-5" />
-              Añadir Ingrediente
-            </motion.button>
-          </div>
-
-          {/* Steps List */}
-          <div>
-            <h3 className="text-xl font-bold text-gray-800 mb-3">Pasos de Preparación</h3>
-            {steps.map((step, index) => (
-              <div key={index} className="bg-gray-50 p-4 rounded-2xl mb-4 shadow-sm">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-semibold text-gray-800">Paso {index + 1}</h4>
-                  {steps.length > 1 && (
-                    <motion.button
-                      type="button"
-                      onClick={() => handleRemoveStep(index)}
-                      className="bg-red-100 text-red-600 p-2 rounded-xl hover:bg-red-200 transition-all"
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </motion.button>
-                  )}
-                </div>
-                <textarea
-                  value={step.instruction}
-                  onChange={(e) => handleStepChange(index, 'instruction', e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none h-20 mb-3"
-                  placeholder="Instrucción del paso..."
-                  required
-                ></textarea>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="block text-gray-700 text-sm font-medium mb-1">Duración (min)</label>
-                    <input
-                      type="number"
-                      value={step.duration}
-                      onChange={(e) => handleStepChange(index, 'duration', parseInt(e.target.value) || 0)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-                      min="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 text-sm font-medium mb-1">Nivel de Llama</label>
-                    <select
-                      value={step.flameLevel}
-                      onChange={(e) => handleStepChange(index, 'flameLevel', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none bg-white"
-                    >
-                      <option value="bajo">Bajo</option>
-                      <option value="medio">Medio</option>
-                      <option value="alto">Alto</option>
-                      <option value="apagado">Apagado</option>
-                    </select>
-                  </div>
+              <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                <X className="w-7 h-7" />
+              </button>
+    
+              <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">
+                {recipeToEdit && recipeToEdit.id ? 'Editar Receta' : 'Crear Nueva Receta'}
+              </h2>
+    
+              <form onSubmit={handleSubmit} className="space-y-5 h-[calc(100%-80px)] overflow-y-auto pr-4">
+                {/* --- SECCIONES DE DATOS GENERALES, IMAGEN PRINCIPAL E INGREDIENTES --- */}
+                <input name="name" value={recipeData.name} onChange={handleDataChange} placeholder="Nombre de la receta" className="w-full text-xl font-semibold px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-teal-400" required />
+                <textarea name="description" value={recipeData.description} onChange={handleDataChange} placeholder="Descripción breve y apetitosa..." className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-teal-400" rows="3" required />
+                <div className="flex items-center gap-4">
+                  <Clock className="w-6 h-6 text-gray-500" />
+                  <input name="totalTime" value={recipeData.totalTime} onChange={handleDataChange} placeholder="Tiempo total (ej: 45 min)" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-teal-400" required />
                 </div>
                 <div>
-                  <label className="block text-gray-700 text-sm font-medium mb-1">Ingrediente principal del paso</label>
-                  <input
-                    type="text"
-                    value={step.ingredient}
-                    onChange={(e) => handleStepChange(index, 'ingredient', e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-                    placeholder="Ej: Pollo"
-                  />
-                </div>
-                {/* Step Image Upload */}
-                <div className="mt-3">
-                  <label className="block text-gray-700 text-sm font-medium mb-1">Foto del Paso (Opcional)</label>
+                  <label className="block text-gray-700 font-semibold mb-2">Imagen de la Receta</label>
                   <div className="flex items-center gap-4">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleStepImageChange(index, e.target.files[0])}
-                      className="hidden"
-                      id={`step-image-upload-${index}`}
-                    />
-                    <label
-                      htmlFor={`step-image-upload-${index}`}
-                      className="flex-shrink-0 w-24 h-24 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-orange-400 transition-all"
-                    >
-                      {step.imageUrl ? (
-                        <img src={step.imageUrl} alt="Preview" className="w-full h-full object-cover rounded-xl" />
-                      ) : (
-                        <ImagePlus className="w-8 h-8 text-gray-400" />
-                      )}
+                    <input type="file" accept="image/*" onChange={handleMainImageChange} className="hidden" id="recipe-image-upload" />
+                    <label htmlFor="recipe-image-upload" className="flex-shrink-0 w-32 h-32 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-teal-400">
+                      {imagePreview ? <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-xl" /> : <ImagePlus className="w-10 h-10 text-gray-400" />}
                     </label>
-                    <p className="text-gray-500 text-sm">
-                      {step.imageFile ? step.imageFile.name : 'Haz clic para subir una imagen'}
-                    </p>
+                    <p className="text-gray-500 text-sm">{imageFile ? imageFile.name : 'Sube una foto que enamore.'}</p>
                   </div>
                 </div>
-              </div>
-            ))}
-            <motion.button
-              type="button"
-              onClick={handleAddStep}
-              className="w-full bg-blue-100 text-blue-600 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-200 transition-all"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Plus className="w-5 h-5" />
-              Añadir Paso
-            </motion.button>
-          </div>
+                <div className="border-t pt-4">
+                  <h3 className="text-xl font-bold text-gray-800 mb-3">Ingredientes</h3>
+                  {recipeData.ingredients.map((ing, index) => (
+                    <div key={ing.id} className="flex items-center gap-2 mb-2">
+                      <input name="quantity" value={ing.quantity} onChange={(e) => handleIngredientTextChange(index, e)} placeholder="Ej: 2 tazas" className="w-1/3 px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
+                      <input name="name" value={ing.name} onChange={(e) => handleIngredientTextChange(index, e)} placeholder="Ej: Harina de trigo" className="flex-grow px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
+                      <input type="file" accept="image/*" id={`ing-img-${index}`} onChange={(e) => handleIngredientImageChange(index, e)} className="hidden" />
+                      <label htmlFor={`ing-img-${index}`} className="flex-shrink-0 w-10 h-10 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-teal-400">
+                        {ing.imagePreview ? <img src={ing.imagePreview} alt="preview" className="w-full h-full object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
+                      </label>
+                      <button type="button" onClick={() => removeIngredientField(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><Trash2 className="w-5 h-5" /></button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addIngredientField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold"><PlusCircle className="w-5 h-5" />Añadir Ingrediente</button>
+                </div>
+                
+                {/* --- SECCIÓN DE PASOS (NUEVA Y MEJORADA) --- */}
+                <div className="border-t pt-4">
+                  <h3 className="text-xl font-bold text-gray-800 mb-3">Pasos de Preparación</h3>
+                  {recipeData.steps.map((step, index) => {
+                    const selectedType = STEP_TYPES.find(t => t.value === step.type) || {};
+                    const availableUtensils = UTENSILS[step.type] || [];
+                    const tempOptions = TEMPERATURE_OPTIONS[step.utensil] || [];
 
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                    return (
+                      <div key={step.id} className="bg-gray-50 p-4 rounded-xl mb-3 border">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-bold text-gray-500 text-lg">{index + 1}.</span>
+                          <select name="type" value={step.type} onChange={(e) => handleStepFieldChange(index, e)} className="px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none bg-white">
+                            {STEP_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+                          </select>
+                          <div className="flex-grow"></div>
+                          <input type="file" accept="image/*" id={`step-img-${index}`} onChange={(e) => handleStepImageChange(index, e)} className="hidden" />
+                          <label htmlFor={`step-img-${index}`} className="flex-shrink-0 w-10 h-10 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-teal-400">
+                            {step.imagePreview ? <img src={step.imagePreview} alt="preview" className="w-full h-full object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
+                          </label>
+                          <button type="button" onClick={() => removeStepField(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><Trash2 className="w-5 h-5" /></button>
+                        </div>
+                        <textarea name="instruction" value={step.instruction} onChange={(e) => handleStepFieldChange(index, e)} placeholder="Describe la acción..." className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none mb-2" rows="2" />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          {/* --- TIEMPO --- */}
+                          <input name="time" value={step.time} onChange={(e) => handleStepFieldChange(index, e)} placeholder="Tiempo (ej: 10 min)" className="px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
+                          
+                          {/* --- UTENSILIO (si aplica) --- */}
+                          {selectedType.hasUtensil && (
+                            <select name="utensil" value={step.utensil} onChange={(e) => handleStepFieldChange(index, e)} className="px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none bg-white">
+                              <option value="">Selecciona utensilio</option>
+                              {availableUtensils.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          )}
+    
+                          {/* --- TEMPERATURA (condicional) --- */}
+                          {selectedType.hasUtensil && step.utensil && (
+                             <select name="temperature" value={step.temperature} onChange={(e) => handleStepFieldChange(index, e)} className="px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none bg-white">
+                                <option value="">Selecciona nivel</option>
+                                {TEMPERATURE_OPTIONS[step.utensil]?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                             </select>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={addStepField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold"><PlusCircle className="w-5 h-5" />Añadir Paso</button>
+                </div>
+    
+                {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+    
+                {/* --- BOTÓN DE GUARDAR --- */}
+                <div className="pt-4">
+                  <motion.button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-teal-500 text-white disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed"
+                    whileHover={loading ? {} : { scale: 1.02 }}
+                    whileTap={loading ? {} : { scale: 0.98 }}
+                  >
+                    {loading ? 'Guardando...' : 'Guardar Receta'}
+                    {!loading && <Save className="w-6 h-6" />}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          <motion.button
-            type="submit"
-            className={`w-full py-3 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 ${
-              loading ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600'
-            }`}
-            whileHover={loading ? {} : { scale: 1.02 }}
-            whileTap={loading ? {} : { scale: 0.98 }}
-            disabled={loading}
-          >
-            {loading ? 'Guardando...' : 'Guardar Receta'}
-            {!loading && <Save className="w-5 h-5" />}
-          </motion.button>
-        </form>
-      </motion.div>
-    </div>
+      {/* Modal de Notificación */}
+      <NotificationModal
+        isOpen={notification.isOpen}
+        message={notification.message}
+        onClose={closeNotification}
+        type={notification.type}
+      />
+    </>
   );
 };
 
