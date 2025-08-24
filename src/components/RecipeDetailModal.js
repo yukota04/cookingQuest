@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Star, User, Clock, MessageSquare, Send, Heart, ChefHat } from 'lucide-react';
-import { getFirestore, doc, getDoc, collection, addDoc, query, orderBy, onSnapshot, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, addDoc, query, orderBy, onSnapshot, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { app } from '../firebaseConfig';
 import NotificationModal from './NotificationModal';

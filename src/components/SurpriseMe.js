@@ -66,6 +66,7 @@ const SurpriseMe = () => {
 
     const handleCloseModal = () => {
         setIsDetailModalOpen(false);
+        setRandomRecipe(null);
     };
 
     return (

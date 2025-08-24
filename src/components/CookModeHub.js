@@ -1,10 +1,28 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChefHat, Sparkles, Utensils, MessageSquare, Plus } from 'lucide-react';
+import AdPlacement from './AdPlacement'; // Importa el nuevo componente de anuncio
+
+const MEAL_TYPES = [
+  { name: 'Desayuno', icon: '🍳', value: 'desayuno' },
+  { name: 'Almuerzo', icon: '🍽️', value: 'almuerzo' },
+  { name: 'Cena', icon: '🌙', value: 'cena' },
+  { name: 'Postre', icon: '🍰', value: 'postre' },
+  { name: 'Snack', icon: '🥨', value: 'snack' },
+];
 
 const CookModeHub = () => {
     const navigate = useNavigate();
+    const [showAd, setShowAd] = useState(false);
+
+    useEffect(() => {
+        const adShown = sessionStorage.getItem('ad_shown_cook_mode');
+        if (!adShown) {
+            setShowAd(true);
+            sessionStorage.setItem('ad_shown_cook_mode', 'true');
+        }
+    }, []);
 
     const menuItems = [
         {
@@ -56,6 +74,8 @@ const CookModeHub = () => {
                         Elige cómo quieres empezar tu aventura culinaria.
                     </p>
                 </motion.div>
+
+                {showAd && <AdPlacement />}
 
                 <div className="px-6 pb-8 w-full">
                     <div className="grid grid-cols-1 gap-4 max-w-4xl mx-auto">

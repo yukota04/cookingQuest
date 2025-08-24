@@ -9,6 +9,7 @@ import RecipeDetailModal from './RecipeDetailModal';
 import IngredientVerificationScreen from './IngredientVerificationScreen';
 import RecipeEditModal from './RecipeEditModal';
 import NotificationModal from './NotificationModal';
+import AdPlacement from './AdPlacement';
 
 // Lista de nacionalidades y sus emojis de bandera (debe ser la misma que en RecipeEditorScreen.js)
 const NATIONALITIES = [
@@ -111,6 +112,7 @@ const RecipeLibrary = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showAd, setShowAd] = useState(false);
   
   // Estados para los modales de edición y visualización
   const [selectedRecipe, setSelectedRecipe] = useState(null);
@@ -150,6 +152,14 @@ const RecipeLibrary = () => {
   }, [auth]);
 
   useEffect(() => {
+    const adShown = sessionStorage.getItem('ad_shown_library');
+    if (!adShown) {
+      setShowAd(true);
+      sessionStorage.setItem('ad_shown_library', 'true');
+    }
+  }, []);
+
+  useEffect(() => {
     if (!currentUser) {
       setUserFavorites([]);
       return;
@@ -168,39 +178,37 @@ const RecipeLibrary = () => {
     const fetchRecipes = async () => {
       try {
         setLoading(true);
-        let recipesQueryRef = collection(db, 'recipes');
-        
-        // CORRECCIÓN: Optamos por una estrategia de filtros en memoria para evitar errores de índice.
+        const recipesQueryRef = collection(db, 'recipes');
         const querySnapshot = await getDocs(recipesQueryRef);
         let fetchedRecipes = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         }));
 
-        // Filtramos por autor (Mis Recetas)
+        // Aplicamos los filtros de forma local para evitar errores de índice.
         if (activeFilter === 'myRecipes' && currentUser) {
             fetchedRecipes = fetchedRecipes.filter(r => r.authorId === currentUser.uid);
         } else if (activeFilter === 'favorites' && userFavorites.length > 0) {
             fetchedRecipes = fetchedRecipes.filter(r => userFavorites.includes(r.id));
+        } else if (activeFilter === 'featured') {
+             // Solo ordenamos, no filtramos por otro campo en la consulta de Firebase
         }
         
-        // Filtramos por dificultad
         if (filterDifficulty !== 'all') {
             fetchedRecipes = fetchedRecipes.filter(r => r.difficulty === filterDifficulty);
         }
 
-        // Filtramos por nacionalidad
         if (filterNationality !== 'all') {
             fetchedRecipes = fetchedRecipes.filter(r => r.nationality === filterNationality);
         }
         
-        // Ordenamos por fecha de creación (siempre en la aplicación)
-        fetchedRecipes.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-
-        // Aplicamos el filtro de "Destacados" si es necesario
+        // Ordenamos la lista en la aplicación
         if (activeFilter === 'featured') {
             fetchedRecipes.sort((a, b) => (b.ratingCount || 0) - (a.ratingCount || 0));
+        } else {
+             fetchedRecipes.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
         }
+
 
         setRecipes(fetchedRecipes);
       } catch (err) {
@@ -210,9 +218,10 @@ const RecipeLibrary = () => {
         setLoading(false);
       }
     };
-
-    fetchRecipes();
-  }, [db, activeFilter, filterDifficulty, currentUser, userFavorites, filterNationality]);
+    if (!showAd) {
+      fetchRecipes();
+    }
+  }, [db, activeFilter, filterDifficulty, currentUser, userFavorites, filterNationality, showAd]);
 
 
   // --- LÓGICA DE MANEJO DE MODALES ---
@@ -410,6 +419,7 @@ const RecipeLibrary = () => {
             </div>
           </div>
         </div>
+        {showAd && <AdPlacement />}
 
         <div className="p-6 max-w-6xl mx-auto">
           {/* Search and Filter Bar */}

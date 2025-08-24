@@ -156,6 +156,9 @@ const RealCookMode = () => {
                         <div>
                             <h1 className="text-3xl font-bold text-gray-800">{recipe.name}</h1>
                             <p className="text-gray-600">Paso {currentStepIndex + 1} de {recipe.steps.length}</p>
+                            {recipe.mealType && (
+                                <p className="text-gray-500 text-sm mt-1">Tipo: {recipe.mealType}</p>
+                            )}
                         </div>
                     </div>
 

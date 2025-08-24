@@ -259,12 +259,10 @@ const RecipeEditorScreen = () => {
         if (!currentUser) return;
         const userDocRef = doc(db, 'users', currentUser.uid);
 
-        // Incrementar el contador de recetas creadas
         await updateDoc(userDocRef, {
             recipesCreated: increment(1)
         });
 
-        // Obtener los datos del usuario actualizados para chequear los logros
         const userDocSnap = await getDoc(userDocRef);
         if (!userDocSnap.exists()) return;
 
@@ -272,7 +270,6 @@ const RecipeEditorScreen = () => {
         const currentRecipesCreated = userData.recipesCreated || 0;
         const currentAchievements = userData.achievements || [];
         
-        // Chequear logros de creación de recetas
         Achievements.recipesCreated.forEach(ach => {
             if (currentRecipesCreated >= ach.threshold && !currentAchievements.includes(ach.id)) {
                 updateDoc(userDocRef, {
@@ -282,7 +279,6 @@ const RecipeEditorScreen = () => {
             }
         });
 
-        // Chequear logro de especialidad (si se definió el tipo de comida)
         if (recipeData.mealType) {
             const mealTypePath = `specialtyAchievement.${recipeData.mealType}`;
             await updateDoc(userDocRef, {
@@ -355,7 +351,7 @@ const RecipeEditorScreen = () => {
                 authorId: currentUser.uid,
                 updatedAt: serverTimestamp(),
                 nationality: recipeData.nationality || 'Internacional',
-                mealType: recipeData.mealType || 'Otro', // Valor por defecto
+                mealType: recipeData.mealType || 'Otro',
             };
 
             if (recipeToEdit && recipeToEdit.id) {
@@ -372,7 +368,7 @@ const RecipeEditorScreen = () => {
                     totalRatingSum: 0,
                 });
                 showNotification("Receta creada con éxito!", "success");
-                await checkAchievements(); // <--- Aquí se llama a la función de logros
+                await checkAchievements();
             }
             navigate('/recipes');
         } catch (err) {
@@ -546,15 +542,9 @@ const RecipeEditorScreen = () => {
                                                 {STEP_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
                                             </select>
                                             <div className="flex-grow"></div>
-                                            <motion.button
-                                                type="button"
-                                                onClick={() => openImagePickerModal('step', index)}
-                                                className="p-2 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-teal-400"
-                                                whileHover={{ scale: 1.1 }}
-                                                whileTap={{ scale: 0.9 }}
-                                            >
-                                                {step.imagePreview ? <img src={step.imagePreview} alt="preview" className="w-6 h-6 object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
-                                            </motion.button>
+                                            <label htmlFor={`step-img-upload-${index}`} className="flex-shrink-0 w-10 h-10 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-teal-400" onClick={() => openImagePickerModal('step', index)}>
+                                                {step.imagePreview ? <img src={step.imagePreview} alt="preview" className="w-full h-full object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
+                                            </label>
                                             <button type="button" onClick={() => removeStepField(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><Trash2 className="w-5 h-5" /></button>
                                         </div>
                                         <textarea name="instruction" value={step.instruction} onChange={(e) => handleStepFieldChange(index, e)} placeholder="Describe la acción..." className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none mb-2" rows="2" />

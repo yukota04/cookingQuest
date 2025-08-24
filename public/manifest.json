@@ -3,6 +3,7 @@
   "name": "CookingQuest",
   "short_name": "CookingQuest",
   "start_url": ".",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ff5722",

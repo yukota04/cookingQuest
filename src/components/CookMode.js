@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import { app } from '../firebaseConfig';
 import { ArrowLeft, ChefHat, Search, Sparkles, XCircle, Utensils } from 'lucide-react';
 import NotificationModal from './NotificationModal';
