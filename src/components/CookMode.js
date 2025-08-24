@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
 import { app } from '../firebaseConfig';
-import { ArrowLeft, ChefHat, Search, Sparkles, XCircle, Filter } from 'lucide-react';
-import IngredientVerificationScreen from './IngredientVerificationScreen';
+import { ArrowLeft, ChefHat, Search, Sparkles, XCircle, Utensils } from 'lucide-react';
+import NotificationModal from './NotificationModal';
 
 // Componente para mostrar una tarjeta de receta
 const RecipeCard = ({ recipe, onSelect }) => (
@@ -36,9 +36,19 @@ const CookMode = () => {
     const [filteredRecipes, setFilteredRecipes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isSearching, setIsSearching] = useState(false);
-    const [currentCookingRecipe, setCurrentCookingRecipe] = useState(null);
-
+    const [ingredientSearchTerm, setIngredientSearchTerm] = useState('');
+    
     const db = getFirestore(app);
+
+    const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info' });
+
+    const showNotification = (message, type) => {
+        setNotification({ isOpen: true, message, type });
+    };
+
+    const closeNotification = () => {
+        setNotification({ ...notification, isOpen: false });
+    };
 
     useEffect(() => {
         const fetchAllData = async () => {
@@ -76,17 +86,20 @@ const CookMode = () => {
 
     const handleSearchRecipes = () => {
         if (selectedIngredients.size === 0) {
-            showModal("¡Selecciona al menos un ingrediente!");
+            showNotification("¡Selecciona al menos un ingrediente!", "info");
             return;
         }
 
         const results = allRecipes.filter(recipe => {
             if (!recipe.ingredients || !Array.isArray(recipe.ingredients)) return false;
-            return [...selectedIngredients].every(selectedIngName =>
-                recipe.ingredients.some(recipeIng => 
-                    (recipeIng.name || '').trim().toLowerCase() === selectedIngName
-                )
+            
+            // Lógica para encontrar las recetas que contienen TODOS los ingredientes seleccionados
+            const recipeIngredients = new Set(recipe.ingredients.map(ing => (ing.name || '').trim().toLowerCase()));
+            const hasAllIngredients = [...selectedIngredients].every(selectedIng => 
+                recipeIngredients.has(selectedIng)
             );
+            
+            return hasAllIngredients;
         });
 
         setFilteredRecipes(results);
@@ -109,77 +122,52 @@ const CookMode = () => {
         setSelectedIngredients(new Set());
         setFilteredRecipes([]);
         setIsSearching(false);
+        setIngredientSearchTerm('');
     };
     
     const handleStartCooking = (recipe) => {
-        setCurrentCookingRecipe(recipe);
+        navigate('/real-cook-mode', { state: { recipe } });
     };
 
-    const handleStartCookingRealMode = () => {
-        navigate('/cook-mode', { state: { recipe: currentCookingRecipe } });
-    };
-
-    const handleCloseVerification = () => {
-      setCurrentCookingRecipe(null);
-    };
-
-    const [modalMessage, setModalMessage] = useState(null);
-    const showModal = (message) => {
-        setModalMessage(message);
-    };
-
-    if (currentCookingRecipe) {
-        return (
-            <IngredientVerificationScreen
-                recipe={currentCookingRecipe}
-                onStartCookingRealMode={handleStartCookingRealMode}
-            />
-        );
-    }
+    // Filtramos la lista de ingredientes mostrada en la UI
+    const filteredIngredients = uniqueIngredients.filter(ing => 
+        ing.name.toLowerCase().includes(ingredientSearchTerm.toLowerCase())
+    );
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-orange-300 via-red-400 to-pink-500 p-4 sm:p-6">
             <motion.button
-                onClick={() => navigate('/menu')}
-                className="absolute top-4 left-4 flex items-center gap-2 text-white font-semibold bg-black/20 px-4 py-2 rounded-lg"
+                onClick={() => navigate('/cook-mode-hub')}
+                className="absolute top-4 left-4 flex items-center gap-2 text-white font-semibold bg-black/30 backdrop-blur-sm px-4 py-2 rounded-lg"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
             >
                 <ArrowLeft className="w-5 h-5" />
-                Menú Principal
+                Modos
             </motion.button>
-
-            <AnimatePresence>
-                {modalMessage && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-                    >
-                        <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-sm relative text-center">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4">Aviso</h2>
-                            <p className="text-gray-700 mb-6">{modalMessage}</p>
-                            <motion.button
-                                onClick={() => setModalMessage(null)}
-                                className="bg-orange-500 text-white px-6 py-3 rounded-xl font-semibold"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                Entendido
-                            </motion.button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
+            
             <div className="max-w-4xl mx-auto mt-16">
                 <AnimatePresence mode="wait">
                     {!isSearching ? (
                         <motion.div key="selection" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
-                            <h1 className="text-4xl font-bold text-white text-center mb-2">¿Qué tienes en tu nevera?</h1>
+                            <div className="flex items-center justify-center gap-4 text-white text-center mb-6">
+                                <Utensils className="w-12 h-12" />
+                                <h1 className="text-4xl font-bold">Tengo a la mano</h1>
+                            </div>
                             <p className="text-white/80 text-center mb-6">Selecciona los ingredientes que tienes y te diremos qué puedes cocinar.</p>
                             
+                            {/* Buscador de ingredientes */}
+                            <div className="relative mb-6">
+                                <input
+                                    type="text"
+                                    placeholder="Busca un ingrediente..."
+                                    className="w-full pl-10 pr-4 py-3 rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    value={ingredientSearchTerm}
+                                    onChange={(e) => setIngredientSearchTerm(e.target.value)}
+                                />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            </div>
+
                             {loading ? (
                                 <div className="text-center py-12 text-white">
                                     <ChefHat className="w-16 h-16 animate-bounce mx-auto mb-4" />
@@ -187,7 +175,7 @@ const CookMode = () => {
                                 </div>
                             ) : (
                                 <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 max-h-96 overflow-y-auto custom-scrollbar">
-                                    {uniqueIngredients.map(ing => (
+                                    {filteredIngredients.map(ing => (
                                         <motion.div
                                             key={ing.name}
                                             onClick={() => handleToggleIngredient(ing.name)}
@@ -231,7 +219,7 @@ const CookMode = () => {
                                 <div className="text-center bg-white/80 p-8 rounded-2xl">
                                     <Sparkles className="w-12 h-12 mx-auto text-yellow-500 mb-4" />
                                     <p className="text-xl font-semibold text-gray-800">¡Vaya! No encontramos recetas exactas.</p>
-                                    <p className="text-gray-600">Intenta agregar más ingredientes a tu selección.</p>
+                                    <p className="text-gray-600">Intenta agregar menos ingredientes a tu selección.</p>
                                 </div>
                              )}
 
@@ -248,6 +236,13 @@ const CookMode = () => {
                     )}
                 </AnimatePresence>
             </div>
+            
+            <NotificationModal
+                isOpen={notification.isOpen}
+                message={notification.message}
+                onClose={closeNotification}
+                type={notification.type}
+            />
         </div>
     );
 };

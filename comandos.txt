@@ -1,0 +1,15 @@
+npm run build
+
+
+
+# Añade todos los archivos modificados y nuevos a un "staging area"
+git add .
+
+# Crea un commit con un mensaje descriptivo
+git commit -m "feat: Refactorización de notificaciones y preparación para producción"
+
+# Sube los cambios al repositorio remoto
+git push origin main
+
+
+firebase deploy

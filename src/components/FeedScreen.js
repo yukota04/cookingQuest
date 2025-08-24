@@ -36,6 +36,13 @@ import {
 } from "lucide-react";
 import NotificationModal from "./NotificationModal";
 
+const Achievements = {
+    comments: [
+        { id: 'gastronomic_critic', name: 'El crítico gastronómico', threshold: 10, type: 'comment' },
+    ],
+    // Puedes añadir más logros aquí
+};
+
 // Componente para una publicación individual en el feed
 const PostItem = ({
   post,
@@ -87,6 +94,29 @@ const PostItem = ({
       checkIfFollowing();
     }
   }, [currentUserId, post.userId, db]);
+  
+  const checkCommentAchievements = async () => {
+    if (!currentUserId) return;
+    const userDocRef = doc(db, 'users', currentUserId);
+    await updateDoc(userDocRef, {
+        postsCommented: increment(1)
+    });
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) return;
+
+    const userData = userDocSnap.data();
+    const currentComments = userData.postsCommented || 0;
+    const currentAchievements = userData.achievements || [];
+    
+    Achievements.comments.forEach(ach => {
+      if (currentComments >= ach.threshold && !currentAchievements.includes(ach.id)) {
+        updateDoc(userDocRef, {
+            achievements: arrayUnion(ach.id)
+        });
+        alert(`¡Logro desbloqueado: ${ach.name}!`); // Alerta para el usuario
+      }
+    });
+  };
 
   const handlePostComment = async () => {
     if (!auth.currentUser || !commentText.trim()) return;
@@ -99,6 +129,7 @@ const PostItem = ({
         timestamp: serverTimestamp(),
       });
       setCommentText("");
+      await checkCommentAchievements();
     } catch (e) {
       console.error("Error adding comment: ", e);
     }
@@ -232,7 +263,7 @@ const PostItem = ({
         <motion.button
           onClick={() => {
             const shareText = `Echa un vistazo a esta publicación de ${post.userName} en CookingQuest: "${post.text}"`;
-            navigator.clipboard.writeText(shareText);
+            document.execCommand('copy');
             alert("Enlace copiado al portapapeles!"); // Usaremos el modal para esto después
           }}
           className="flex items-center text-gray-600 hover:text-purple-500 transition-colors duration-200"
@@ -384,6 +415,25 @@ const FeedScreen = () => {
     }
   };
 
+  const checkPostAchievements = async (imageUrl) => {
+    if (!userId) return;
+    const userDocRef = doc(db, 'users', userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) return;
+
+    const userData = userDocSnap.data();
+    const currentAchievements = userData.achievements || [];
+
+    // Logro por la primera foto
+    const firstPhotoAchievement = 'picture_perfect';
+    if (imageUrl && !currentAchievements.includes(firstPhotoAchievement)) {
+        await updateDoc(userDocRef, {
+            achievements: arrayUnion(firstPhotoAchievement)
+        });
+        showNotification("¡Logro desbloqueado: Un plato de foto!", "success");
+    }
+  };
+
   // Handle new post submission
   const handlePost = async () => {
     if (!newPostText.trim() && !image) {
@@ -412,6 +462,7 @@ const FeedScreen = () => {
       setNewPostText("");
       setImage(null);
       showNotification("¡Publicación creada con éxito!", "success");
+      await checkPostAchievements(imageUrl);
     } catch (e) {
       console.error("Error adding document: ", e);
       showNotification("Hubo un error al publicar. Inténtalo de nuevo.", "error");
@@ -459,13 +510,15 @@ const FeedScreen = () => {
       showNotification("Debes iniciar sesión para seguir a otros usuarios.", "info");
       return;
     }
-    const userRef = doc(db, "users", userId);
+    const userDocRef = doc(db, "users", userId);
+    const followedUserDocRef = doc(db, "users", followedUserId);
+
     try {
-      await updateDoc(userRef, {
-        following: isFollowing
-          ? arrayRemove(followedUserId)
-          : arrayUnion(followedUserId),
+      await updateDoc(userDocRef, {
+        following: isFollowing ? arrayRemove(followedUserId) : arrayUnion(followedUserId),
+        followingCount: increment(isFollowing ? -1 : 1)
       });
+      // AQUI DEBERIAS CHEQUEAR EL LOGRO DE SEGUIDORES
       showNotification(isFollowing ? "Dejaste de seguir al usuario." : "¡Ahora sigues a este usuario!", "success");
     } catch (e) {
       console.error("Error al seguir/dejar de seguir usuario:", e);

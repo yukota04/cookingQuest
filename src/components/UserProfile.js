@@ -11,6 +11,9 @@ import {
   Star,
   Camera,
   ChefHat,
+  Bell,
+  BellOff,
+  Trophy
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
@@ -44,13 +47,13 @@ const UserProfile = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("profile");
-
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newBio, setNewBio] = useState("");
   const [newFavoriteCuisine, setNewFavoriteCuisine] = useState("");
   const [profileImageFile, setProfileImageFile] = useState(null);
   const [profileImageUrl, setProfileImageUrl] = useState("");
+  const [isPushEnabled, setIsPushEnabled] = useState(false); // Estado para las notificaciones
 
   // Estados para el modal de notificación
   const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info' });
@@ -138,6 +141,48 @@ const UserProfile = () => {
     });
     return () => unsubscribe();
   }, [auth, db, navigate]);
+
+  const handlePushSubscription = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showNotification("Las notificaciones push no están soportadas en este navegador.", "error");
+        return;
+    }
+
+    try {
+        const serviceWorkerRegistration = await navigator.serviceWorker.ready;
+
+        const applicationServerKey = urlBase64ToUint8Array("BBJokuC5IFJii2D0Gr7QHcx-Iirz2oxYurUZTIeqlbVjpLvsILH_kVBhLWtogPTznoceNXN3qlh4zcLp5cKiUHg");
+        
+        const pushSubscription = await serviceWorkerRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: applicationServerKey
+        });
+
+        console.log('Suscripción a notificaciones:', pushSubscription);
+        showNotification("Suscripción a notificaciones activada con éxito!", "success");
+        setIsPushEnabled(true);
+
+    } catch (error) {
+        console.error('Error al suscribirse a las notificaciones push:', error);
+        showNotification("Error al suscribirse a las notificaciones. Asegúrate de otorgar los permisos.", "error");
+        setIsPushEnabled(false);
+    }
+  };
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
 
   const handleLogout = async () => {
     try {
@@ -313,7 +358,20 @@ const UserProfile = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-6">
+            {/* Botón para activar/desactivar notificaciones */}
+            <motion.button
+                onClick={handlePushSubscription}
+                className={`w-full py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-colors duration-200 ${isPushEnabled ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+            >
+                {isPushEnabled ? <><BellOff className="w-5 h-5" /> Desactivar Notificaciones</> : <><Bell className="w-5 h-5" /> Activar Notificaciones</>}
+            </motion.button>
+            <div className="text-center text-gray-500 text-xs mt-2">
+                Recibirás notificaciones sobre actividad relevante en tu perfil.
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mt-6">
               <div className="bg-blue-50 rounded-2xl p-4">
                 <Award className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                 <p className="font-semibold text-gray-800">Cocina Favorita</p>
@@ -385,6 +443,19 @@ const UserProfile = () => {
               Mi Perfil
             </motion.button>
             <motion.button
+              onClick={() => navigate('/achievements')}
+              className={`flex-1 py-3 rounded-2xl font-semibold transition-all ${
+                activeTab === "achievements"
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Trophy className="inline-block mr-2" />
+              Logros
+            </motion.button>
+            <motion.button
               onClick={() => setActiveTab("favorites")}
               className={`flex-1 py-3 rounded-2xl font-semibold transition-all ${
                 activeTab === "favorites"
@@ -450,7 +521,6 @@ const UserProfile = () => {
               </div>
             </>
           )}
-
           {activeTab === "profile" && (
             <AnimatePresence>
               {/* Contenido del perfil, duplicado para la pestaña activa, pero ahora animado */}

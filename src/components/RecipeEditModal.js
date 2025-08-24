@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ImagePlus, PlusCircle, Trash2, Clock, Save } from 'lucide-react';
+import { X, ImagePlus, PlusCircle, Trash2, Clock, Save, Camera, Upload, ArrowLeft, Plus } from 'lucide-react';
 import { getFirestore, doc, addDoc, updateDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { app } from '../firebaseConfig';
-import NotificationModal from './NotificationModal'; // Importamos el nuevo componente
+import NotificationModal from './NotificationModal';
 
-// --- Definición de los tipos de pasos y utensilios ---
+// Lista de nacionalidades predefinidas. Puede ser expandida.
+const NATIONALITIES_LIST = [
+    'Internacional', 'Venezolana', 'Colombiana', 'Mexicana', 'Italiana', 'Japonesa', 'Francesa', 'Española', 'Peruana',
+];
+
 const STEP_TYPES = [
     { value: 'preparar', label: '🔪 Preparar (Picar, Cortar...)' },
     { value: 'mezclar', label: '🥣 Mezclar (Batir, Licuar...)' },
@@ -48,22 +52,30 @@ const INITIAL_STATE = {
   imageUrl: '',
   ingredients: [INITIAL_INGREDIENT],
   steps: [INITIAL_STEP],
+  nationality: '',
 };
 
 const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
   const [recipeData, setRecipeData] = useState(INITIAL_STATE);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
+  const [mainImageFile, setMainImageFile] = useState(null);
+  const [mainImagePreview, setMainImagePreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
+  const [imageTarget, setImageTarget] = useState({ type: null, index: null });
+  const [addingNewNationality, setAddingNewNationality] = useState(false);
+  const [newNationality, setNewNationality] = useState('');
+  const [nationalities, setNationalities] = useState(NATIONALITIES_LIST);
 
-  // Estados para el nuevo modal de notificación
-  const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info' });
+  const fileInputRef = useRef(null);
 
   const db = getFirestore(app);
   const auth = getAuth(app);
   const storage = getStorage(app);
   const currentUser = auth.currentUser;
+
+  // Estados para el nuevo modal de notificación
+  const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info' });
 
   // Función para mostrar el modal de notificación
   const showNotification = (message, type) => {
@@ -79,6 +91,7 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
   };
 
   useEffect(() => {
+    setNationalities(NATIONALITIES_LIST);
     if (isOpen) {
       if (recipeToEdit && recipeToEdit.id) {
         setRecipeData({
@@ -86,11 +99,11 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
           ingredients: (recipeToEdit.ingredients || []).map((ing, i) => ({ ...INITIAL_INGREDIENT, ...ing, id: i, imageFile: null, imagePreview: ing.image || '' })),
           steps: (recipeToEdit.steps || []).map((step, i) => ({ ...INITIAL_STEP, ...step, id: i, imageFile: null, imagePreview: step.image || '' })),
         });
-        setImagePreview(recipeToEdit.imageUrl);
+        setMainImagePreview(recipeToEdit.imageUrl);
       } else {
         setRecipeData(INITIAL_STATE);
-        setImagePreview('');
-        setImageFile(null);
+        setMainImagePreview('');
+        setMainImageFile(null);
       }
       setError('');
     }
@@ -102,11 +115,60 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
   };
 
   const handleMainImageChange = (e) => {
-    if (e.target.files[0]) {
-      const file = e.target.files[0];
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+    if (e.target.files && e.target.files.length > 0) {
+        const file = e.target.files.item(0);
+        setMainImageFile(file);
+        setMainImagePreview(URL.createObjectURL(file));
     }
+    closeImagePickerModal();
+  };
+
+  const handleIngredientImageChange = (index, e) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const newIngredients = [...recipeData.ingredients];
+          newIngredients[index].imageFile = file;
+          newIngredients[index].imagePreview = URL.createObjectURL(file);
+          setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
+      }
+      closeImagePickerModal();
+  };
+
+  const handleStepImageChange = (index, e) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const newSteps = [...recipeData.steps];
+          newSteps[index].imageFile = file;
+          newSteps[index].imagePreview = URL.createObjectURL(file);
+          setRecipeData(prev => ({ ...prev, steps: newSteps }));
+      }
+      closeImagePickerModal();
+  };
+
+  const handleFileChange = (e) => {
+      const { type, index } = imageTarget;
+      if (type === 'main') {
+          handleMainImageChange(e);
+      } else if (type === 'ingredient') {
+          handleIngredientImageChange(index, e);
+      } else if (type === 'step') {
+          handleStepImageChange(index, e);
+      }
+  };
+
+  const openCamera = () => {
+    fileInputRef.current.setAttribute('capture', 'environment');
+    fileInputRef.current.click();
+  };
+
+  const openImagePickerModal = (type, index = null) => {
+    setIsImagePickerOpen(true);
+    setImageTarget({ type, index });
+  };
+
+  const closeImagePickerModal = () => {
+    setIsImagePickerOpen(false);
+    setImageTarget({ type: null, index: null });
   };
 
   // --- MANEJADORES DE INGREDIENTES ---
@@ -117,16 +179,6 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
     setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
   };
   
-  const handleIngredientImageChange = (index, e) => {
-    if (e.target.files[0]) {
-        const file = e.target.files[0];
-        const newIngredients = [...recipeData.ingredients];
-        newIngredients[index].imageFile = file;
-        newIngredients[index].imagePreview = URL.createObjectURL(file);
-        setRecipeData(prev => ({ ...prev, ingredients: newIngredients }));
-    }
-  };
-
   const addIngredientField = () => {
     setRecipeData(prev => ({
       ...prev,
@@ -156,16 +208,6 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
     setRecipeData(prev => ({ ...prev, steps: newSteps }));
   };
 
-  const handleStepImageChange = (index, e) => {
-    if (e.target.files[0]) {
-        const file = e.target.files[0];
-        const newSteps = [...recipeData.steps];
-        newSteps[index].imageFile = file;
-        newSteps[index].imagePreview = URL.createObjectURL(file);
-        setRecipeData(prev => ({ ...prev, steps: newSteps }));
-    }
-  };
-
   const addStepField = () => {
     setRecipeData(prev => ({
       ...prev,
@@ -176,6 +218,23 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
   const removeStepField = (index) => {
     const newSteps = recipeData.steps.filter((_, i) => i !== index);
     setRecipeData(prev => ({ ...prev, steps: newSteps }));
+  };
+  
+  const handleNationalityChange = (e) => {
+      setRecipeData(prev => ({ ...prev, nationality: e.target.value }));
+  };
+
+  const handleAddNewNationality = () => {
+      if (newNationality && !nationalities.some(n => n.toLowerCase() === newNationality.toLowerCase())) {
+          setNationalities(prev => [...prev, newNationality]);
+          setRecipeData(prev => ({ ...prev, nationality: newNationality }));
+          setNewNationality('');
+          setAddingNewNationality(false);
+      } else if (nationalities.some(n => n.toLowerCase() === newNationality.toLowerCase())) {
+          showNotification("Esta nacionalidad ya existe en la lista.", "info");
+      } else {
+          showNotification("Por favor, ingresa una nacionalidad.", "error");
+      }
   };
 
   // --- LÓGICA PARA GUARDAR (CORREGIDA) ---
@@ -190,9 +249,9 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
 
     try {
       let finalRecipeImageUrl = (recipeToEdit && recipeToEdit.imageUrl) ? recipeToEdit.imageUrl : '';
-      if (imageFile) {
-        const imageRef = ref(storage, `recipe_images/${Date.now()}-${imageFile.name}`);
-        const snapshot = await uploadBytes(imageRef, imageFile);
+      if (mainImageFile) {
+        const imageRef = ref(storage, `recipe_images/${Date.now()}-${mainImageFile.name}`);
+        const snapshot = await uploadBytes(imageRef, mainImageFile);
         finalRecipeImageUrl = await getDownloadURL(snapshot.ref);
       }
 
@@ -231,6 +290,8 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
         author: currentUser.displayName || currentUser.email.split('@')[0],
         authorId: currentUser.uid,
         updatedAt: serverTimestamp(),
+        // CORRECCIÓN: Asignar un valor por defecto si no se ha seleccionado nada.
+        nationality: recipeData.nationality || 'Internacional',
       };
 
       if (recipeToEdit && recipeToEdit.id) {
@@ -289,29 +350,94 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
                   <input name="totalTime" value={recipeData.totalTime} onChange={handleDataChange} placeholder="Tiempo total (ej: 45 min)" className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-teal-400" required />
                 </div>
                 <div>
-                  <label className="block text-gray-700 font-semibold mb-2">Imagen de la Receta</label>
-                  <div className="flex items-center gap-4">
-                    <input type="file" accept="image/*" onChange={handleMainImageChange} className="hidden" id="recipe-image-upload" />
-                    <label htmlFor="recipe-image-upload" className="flex-shrink-0 w-32 h-32 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-teal-400">
-                      {imagePreview ? <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-xl" /> : <ImagePlus className="w-10 h-10 text-gray-400" />}
-                    </label>
-                    <p className="text-gray-500 text-sm">{imageFile ? imageFile.name : 'Sube una foto que enamore.'}</p>
+                  <label className="block text-gray-700 font-semibold mb-2">Nacionalidad</label>
+                  <div className="flex items-center gap-2">
+                      {!addingNewNationality ? (
+                          <>
+                              <select
+                                  name="nationality"
+                                  value={recipeData.nationality}
+                                  onChange={handleNationalityChange}
+                                  className="flex-grow px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-teal-400 bg-white"
+                              >
+                                  <option value="">Seleccionar Nacionalidad</option>
+                                  {nationalities.map(nat => (
+                                      <option key={nat} value={nat}>{nat}</option>
+                                  ))}
+                              </select>
+                              <motion.button
+                                  type="button"
+                                  onClick={() => setAddingNewNationality(true)}
+                                  className="p-3 text-teal-500 hover:bg-teal-100 rounded-full"
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                              >
+                                  <Plus className="w-5 h-5" />
+                              </motion.button>
+                          </>
+                      ) : (
+                          <div className="flex gap-2 w-full">
+                              <input
+                                  type="text"
+                                  value={newNationality}
+                                  onChange={(e) => setNewNationality(e.target.value)}
+                                  placeholder="Nueva nacionalidad"
+                                  className="flex-grow px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none"
+                              />
+                              <motion.button
+                                  type="button"
+                                  onClick={handleAddNewNationality}
+                                  className="p-3 text-white bg-teal-500 hover:bg-teal-600 rounded-full"
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                              >
+                                  <Save className="w-5 h-5" />
+                              </motion.button>
+                              <motion.button
+                                  type="button"
+                                  onClick={() => setAddingNewNationality(false)}
+                                  className="p-3 text-white bg-red-500 hover:bg-red-600 rounded-full"
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                              >
+                                  <X className="w-5 h-5" />
+                              </motion.button>
+                          </div>
+                      )}
                   </div>
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-2">Imagen de la Receta</label>
+                  <motion.button
+                    type="button"
+                    onClick={() => openImagePickerModal('main')}
+                    className="w-full flex-shrink-0 border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 transition-all"
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                  >
+                    {mainImagePreview ? <img src={mainImagePreview} alt="Preview" className="w-full h-48 object-cover rounded-xl mb-4" /> : <Upload className="w-10 h-10 text-gray-400" />}
+                    <p className="text-gray-500 text-sm">{mainImageFile ? mainImageFile.name : 'Sube una foto o usa la cámara.'}</p>
+                  </motion.button>
                 </div>
                 <div className="border-t pt-4">
                   <h3 className="text-xl font-bold text-gray-800 mb-3">Ingredientes</h3>
                   {recipeData.ingredients.map((ing, index) => (
                     <div key={ing.id} className="flex items-center gap-2 mb-2">
-                      <input name="quantity" value={ing.quantity} onChange={(e) => handleIngredientTextChange(index, e)} placeholder="Ej: 2 tazas" className="w-1/3 px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
+                      <input name="quantity" value={ing.quantity} onChange={(e) => handleIngredientTextChange(index, e)} placeholder="Ej: 2 tazas" className="w-32 px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
                       <input name="name" value={ing.name} onChange={(e) => handleIngredientTextChange(index, e)} placeholder="Ej: Harina de trigo" className="flex-grow px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none" />
-                      <input type="file" accept="image/*" id={`ing-img-${index}`} onChange={(e) => handleIngredientImageChange(index, e)} className="hidden" />
-                      <label htmlFor={`ing-img-${index}`} className="flex-shrink-0 w-10 h-10 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-teal-400">
-                        {ing.imagePreview ? <img src={ing.imagePreview} alt="preview" className="w-full h-full object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
-                      </label>
+                      <motion.button
+                        type="button"
+                        onClick={() => openImagePickerModal('ingredient', index)}
+                        className="p-2 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-teal-400"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                      >
+                          {ing.imagePreview ? <img src={ing.imagePreview} alt="preview" className="w-6 h-6 object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
+                      </motion.button>
                       <button type="button" onClick={() => removeIngredientField(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><Trash2 className="w-5 h-5" /></button>
                     </div>
                   ))}
-                  <button type="button" onClick={addIngredientField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold"><PlusCircle className="w-5 h-5" />Añadir Ingrediente</button>
+                  <motion.button type="button" onClick={addIngredientField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}><PlusCircle className="w-5 h-5" />Añadir Ingrediente</motion.button>
                 </div>
                 
                 {/* --- SECCIÓN DE PASOS (NUEVA Y MEJORADA) --- */}
@@ -330,10 +456,15 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
                             {STEP_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
                           </select>
                           <div className="flex-grow"></div>
-                          <input type="file" accept="image/*" id={`step-img-${index}`} onChange={(e) => handleStepImageChange(index, e)} className="hidden" />
-                          <label htmlFor={`step-img-${index}`} className="flex-shrink-0 w-10 h-10 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center cursor-pointer hover:border-teal-400">
-                            {step.imagePreview ? <img src={step.imagePreview} alt="preview" className="w-full h-full object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
-                          </label>
+                          <motion.button
+                            type="button"
+                            onClick={() => openImagePickerModal('step', index)}
+                            className="p-2 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-teal-400"
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                          >
+                            {step.imagePreview ? <img src={step.imagePreview} alt="preview" className="w-6 h-6 object-cover rounded-full" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
+                          </motion.button>
                           <button type="button" onClick={() => removeStepField(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><Trash2 className="w-5 h-5" /></button>
                         </div>
                         <textarea name="instruction" value={step.instruction} onChange={(e) => handleStepFieldChange(index, e)} placeholder="Describe la acción..." className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none mb-2" rows="2" />
@@ -361,7 +492,7 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
                       </div>
                     );
                   })}
-                  <button type="button" onClick={addStepField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold"><PlusCircle className="w-5 h-5" />Añadir Paso</button>
+                  <motion.button type="button" onClick={addStepField} className="mt-2 flex items-center gap-2 text-teal-500 font-semibold" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}><PlusCircle className="w-5 h-5" />Añadir Paso</motion.button>
                 </div>
     
                 {error && <p className="text-red-500 text-sm text-center">{error}</p>}
@@ -384,6 +515,70 @@ const RecipeEditModal = ({ isOpen, onClose, recipeToEdit, onSave }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modal para elegir la fuente de la imagen */}
+      <AnimatePresence>
+        {isImagePickerOpen && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            >
+                <motion.div
+                    initial={{ scale: 0.8, y: 20 }}
+                    animate={{ scale: 1, y: 0 }}
+                    exit={{ scale: 0.8, y: 20 }}
+                    className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm text-center"
+                >
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Añadir Imagen</h2>
+                    <p className="text-gray-600 mb-6">Elige cómo quieres añadir tu foto.</p>
+                    <div className="space-y-4">
+                        <motion.button
+                            type="button"
+                            onClick={() => {
+                                closeImagePickerModal();
+                                fileInputRef.current.removeAttribute('capture');
+                                fileInputRef.current.click();
+                            }}
+                            className="w-full flex items-center justify-center gap-3 bg-blue-500 text-white font-semibold py-3 rounded-xl cursor-pointer hover:bg-blue-600"
+                            whileTap={{ scale: 0.98 }}
+                        >
+                            <ImagePlus className="w-6 h-6" />
+                            Subir desde Galería
+                        </motion.button>
+                        <motion.button
+                            type="button"
+                            onClick={() => {
+                                closeImagePickerModal();
+                                fileInputRef.current.setAttribute('capture', 'environment');
+                                fileInputRef.current.click();
+                            }}
+                            className="w-full flex items-center justify-center gap-3 bg-teal-500 text-white font-semibold py-3 rounded-xl hover:bg-teal-600"
+                            whileTap={{ scale: 0.98 }}
+                        >
+                            <Camera className="w-6 h-6" />
+                            Tomar Foto
+                        </motion.button>
+                    </div>
+                    <motion.button
+                        onClick={closeImagePickerModal}
+                        className="mt-4 text-gray-500 hover:text-gray-700 font-semibold"
+                    >
+                        Cancelar
+                    </motion.button>
+                </motion.div>
+            </motion.div>
+        )}
+    </AnimatePresence>
+
+    <input
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+        ref={fileInputRef}
+    />
 
       {/* Modal de Notificación */}
       <NotificationModal

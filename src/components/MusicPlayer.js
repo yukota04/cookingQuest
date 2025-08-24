@@ -7,18 +7,35 @@ const MusicPlayer = () => {
   const audioRef = useRef(null);
 
   useEffect(() => {
-    audioRef.current = document.getElementById("cooking_theme_music");
-    if (audioRef.current) {
-      audioRef.current.volume = 0.3;
-      if (isPlaying) {
-        audioRef.current
-          .play()
-          .catch((e) => console.error("Error playing audio:", e));
-      } else {
+    // Si el elemento de audio aún no existe, lo creamos
+    if (!audioRef.current) {
+      const audio = new Audio("/music/cooking_theme.mp3");
+      audio.loop = true;
+      audio.volume = 0.3;
+      audioRef.current = audio;
+    }
+
+    // Controlamos la reproducción según el estado
+    if (isPlaying) {
+      audioRef.current
+        .play()
+        .catch((e) => console.error("Error playing audio:", e));
+    } else {
+      audioRef.current.pause();
+    }
+
+    // Función de limpieza para cuando el componente se desmonte
+    return () => {
+      if (audioRef.current) {
         audioRef.current.pause();
       }
-    }
+    };
   }, [isPlaying]);
+
+  // Intentamos iniciar la música automáticamente al cargar
+  useEffect(() => {
+    setIsPlaying(true);
+  }, []);
 
   const toggleMusic = () => {
     setIsPlaying(!isPlaying);

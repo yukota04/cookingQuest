@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -11,49 +11,108 @@ import CookMode from "./components/CookMode";
 import RecipeLibrary from "./components/RecipeLibrary";
 import UserProfile from "./components/UserProfile";
 import FeedScreen from "./components/FeedScreen";
-import { useLocation } from "react-router-dom";
+import RealCookMode from "./components/RealCookMode";
+import CookModeHub from "./components/CookModeHub";
+import SurpriseMe from "./components/SurpriseMe";
+import CravingMode from "./components/CravingMode";
+import RecipeEditorScreen from "./components/RecipeEditorScreen";
+import IntroScreen from "./components/IntroScreen";
+import AchievementsScreen from "./components/AchievementsScreen"; // Importa el nuevo componente
 
-const App = () => {
+// Wrapper para los componentes principales con un layout móvil
+const MobileLayout = ({ children }) => {
   return (
-    <Router>
-      {/* Contenedor principal que asegura el formato vertical para móviles */}
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<LoginScreen />} />
-          <Route path="/menu" element={<MainMenu />} />
-          <Route path="/cook-mode" element={<CookModeWrapper />} />
-          <Route path="/recipes" element={<RecipeLibrary />} />
-          <Route path="/feed" element={<FeedScreen />} />{" "}
-          {/* Nueva ruta para el feed */}
-          <Route
-            path="/settings"
-            element={
-              <div className="min-h-screen bg-gradient-to-br from-gray-400 to-slate-500 flex items-center justify-center">
-                <h1 className="text-4xl font-bold text-white">
-                  Configuración - Próximamente
-                </h1>
-              </div>
-            }
-          />
-          <Route path="/profile" element={<UserProfile />} />
-        </Routes>
+    <div className="min-h-screen flex flex-col items-center p-4">
+      <div className="w-full max-w-sm sm:max-w-md lg:max-w-lg mx-auto">
+        {children}
       </div>
-    </Router>
+    </div>
   );
 };
 
-// Wrapper component to pass recipe data to CookMode
-const CookModeWrapper = () => {
-  const location = useLocation();
-  const { recipe } = location.state || {};
+// Componente placeholder para la pantalla de configuraciones
+const SettingsScreen = () => {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-400 to-slate-500 flex items-center justify-center">
+      <h1 className="text-4xl font-bold text-white">
+        Configuración - Próximamente
+      </h1>
+    </div>
+  );
+};
 
-  if (!recipe) {
-    // Redirect if no recipe is provided, or show an error
-    return <Navigate to="/recipes" replace />;
-  }
+const App = () => {
+  const [isLoading, setIsLoading] = useState(
+    sessionStorage.getItem('intro_seen') !== 'true'
+  );
 
-  return <CookMode recipe={recipe} />;
+  useEffect(() => {
+    // Flag para asegurar que la solicitud de permisos se haga solo una vez por sesión.
+    const permissionsAsked = sessionStorage.getItem('permissions_asked');
+
+    if (!permissionsAsked) {
+      // Solicitar permiso de notificaciones
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          console.log("Permiso de notificaciones:", permission);
+        });
+      }
+
+      // Solicitar permiso de la cámara
+      if ('mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .then(stream => {
+            // El stream ya no es necesario, lo detenemos para no consumir recursos
+            stream.getTracks().forEach(track => track.stop());
+            console.log("Permiso de cámara concedido.");
+          })
+          .catch(err => {
+            console.log("Permiso de cámara denegado:", err);
+          });
+      }
+
+      // Establecer el flag para no volver a pedir permisos en esta sesión
+      sessionStorage.setItem('permissions_asked', 'true');
+    }
+  }, []);
+
+  const handleIntroLoaded = () => {
+    sessionStorage.setItem('intro_seen', 'true');
+    setIsLoading(false);
+  };
+
+  return (
+    <Router>
+      <div className="min-h-screen flex flex-col font-sans">
+        {isLoading ? (
+          <IntroScreen onLoaded={handleIntroLoaded} />
+        ) : (
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={<MobileLayout><LoginScreen /></MobileLayout>} />
+            <Route path="/menu" element={<MobileLayout><MainMenu /></MobileLayout>} />
+            
+            {/* Rutas de Recetas y Feed */}
+            <Route path="/recipes" element={<MobileLayout><RecipeLibrary /></MobileLayout>} />
+            <Route path="/feed" element={<MobileLayout><FeedScreen /></MobileLayout>} />
+            <Route path="/profile" element={<MobileLayout><UserProfile /></MobileLayout>} />
+            <Route path="/settings" element={<MobileLayout><SettingsScreen /></MobileLayout>} />
+            <Route path="/achievements" element={<MobileLayout><AchievementsScreen /></MobileLayout>} />
+            
+            {/* Rutas de los Nuevos Modos de Cocción */}
+            <Route path="/cook-mode-hub" element={<MobileLayout><CookModeHub /></MobileLayout>} />
+            <Route path="/what-i-have" element={<MobileLayout><CookMode /></MobileLayout>} />
+            <Route path="/surprise-me" element={<MobileLayout><SurpriseMe /></MobileLayout>} />
+            <Route path="/craving" element={<MobileLayout><CravingMode /></MobileLayout>} />
+            
+            {/* Ruta de Cocción Activa y Editor de Recetas */}
+            <Route path="/real-cook-mode" element={<MobileLayout><RealCookMode /></MobileLayout>} />
+            <Route path="/recipe-editor" element={<MobileLayout><RecipeEditorScreen /></MobileLayout>} />
+          </Routes>
+        )}
+      </div>
+    </Router>
+  );
 };
 
 export default App;

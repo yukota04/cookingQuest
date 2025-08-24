@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle, XCircle, ImagePlus, Play } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { app } from "../firebaseConfig";
+import NotificationModal from './NotificationModal';
 
 const IngredientVerificationScreen = ({ recipe, onStartCookingRealMode }) => {
   const navigate = useNavigate();
@@ -12,7 +13,7 @@ const IngredientVerificationScreen = ({ recipe, onStartCookingRealMode }) => {
   const [ingredientsStatus, setIngredientsStatus] = useState(() => {
     // Initialize status for each ingredient in the recipe
     return recipe.ingredients.map((ing) => ({
-      name: ing,
+      name: ing.name,
       hasImage: false, // Assume no image initially
       imageUrl: null,
       isVerified: false, // Assume not verified initially
@@ -22,9 +23,11 @@ const IngredientVerificationScreen = ({ recipe, onStartCookingRealMode }) => {
   const handleImageUpload = async (index, file) => {
     if (!file) return;
 
-    const newIngredientsStatus = [...ingredientsStatus];
-    newIngredientsStatus[index].isUploading = true; // Add a loading state for the specific item
-    setIngredientsStatus(newIngredientsStatus);
+    setIngredientsStatus((prevStatus) =>
+      prevStatus.map((item, i) =>
+        i === index ? { ...item, isUploading: true } : item,
+      ),
+    );
 
     try {
       const imageRef = ref(
@@ -81,7 +84,7 @@ const IngredientVerificationScreen = ({ recipe, onStartCookingRealMode }) => {
           whileTap={{ scale: 0.95 }}
         >
           <ArrowLeft className="w-5 h-5" />
-          Volver a Recetas
+          Volver a Biblioteca
         </motion.button>
         <h1 className="text-2xl font-bold text-white">
           Verificación de Ingredientes
