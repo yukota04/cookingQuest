@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.web.cookingquest_e0dae.twa",
+      "sha256_cert_fingerprints": [
+        "1D:82:13:58:63:73:9A:0F:D4:F7:AF:33:F9:64:88:B6:5E:21:42:01:A2:38:D7:E0:9F:7F:1B:32:0A:76:D9:6A"
+      ]
+    }
+  }
+]
